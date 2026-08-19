@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Serviços do Veículo</title>
+<style>
+  :root {
+    --bg: #f4f5f7;
+    --card: #ffffff;
+    --border: #e2e4e9;
+    --text: #1f2430;
+    --muted: #6b7280;
+    --accent: #2f6fed;
+    --accent-soft: #eaf1ff;
+    --warn: #d97706;
+    --warn-soft: #fef3e2;
+    --danger: #dc2626;
+    --danger-soft: #fdeaea;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+  }
+  .app {
+    max-width: 480px;
+    margin: 0 auto;
+    min-height: 100vh;
+    background: var(--bg);
+    position: relative;
+    padding-bottom: 100px;
+  }
+
+  /* Header */
+  .app-header { padding: 18px 16px 10px; position: sticky; top: 0; background: var(--bg); z-index: 5; }
+  .app-title { font-size: 19px; font-weight: 700; margin: 0 0 12px; }
+  .tabs { display: flex; gap: 4px; background: #e7e9ee; border-radius: 10px; padding: 3px; }
+  .tab { flex: 1; text-align: center; padding: 8px 4px; border-radius: 8px; font-size: 13px; font-weight: 600; color: var(--muted); cursor: pointer; border: none; background: none; }
+  .tab.active { background: var(--card); color: var(--text); box-shadow: 0 1px 2px rgba(0,0,0,0.08); }
+
+  /* Summary */
+  .summary { display: flex; gap: 8px; padding: 12px 16px 4px; }
+  .stat { flex: 1; background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 10px; }
+  .stat-label { font-size: 10.5px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; margin-bottom: 4px; }
+  .stat-value { font-size: 15px; font-weight: 700; }
+
+  /* Search */
+  .search-row { padding: 10px 16px 4px; }
+  .search-box { display: flex; align-items: center; gap: 8px; background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 9px 12px; }
+  .search-box input { border: none; outline: none; font-size: 13px; flex: 1; background: none; color: var(--text); }
+
+  /* List */
+  .list { padding: 10px 16px 20px; display: flex; flex-direction: column; gap: 10px; }
+  .empty-state { text-align: center; color: var(--muted); font-size: 13px; padding: 40px 20px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 12px 14px; }
+  .card-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+  .card-service { font-size: 14px; font-weight: 700; margin: 0 0 3px; }
+  .card-meta { font-size: 12px; color: var(--muted); }
+  .card-price { font-size: 14px; font-weight: 700; color: var(--accent); white-space: nowrap; }
+  .card-obs { margin-top: 6px; font-size: 12px; color: var(--muted); font-style: italic; }
+  .card-parts { margin-top: 8px; font-size: 12px; color: var(--muted); background: #f7f8fa; border-radius: 8px; padding: 6px 8px; }
+  .card-actions { display: flex; gap: 6px; margin-top: 10px; }
+  .btn-mini { font-size: 11.5px; font-weight: 600; padding: 5px 10px; border-radius: 7px; border: 1px solid var(--border); background: #fff; color: var(--text); cursor: pointer; }
+  .btn-mini.danger { color: var(--danger); border-color: #f3c9c9; }
+  .badge-warn { display: inline-block; font-size: 10px; font-weight: 700; color: var(--warn); background: var(--warn-soft); border-radius: 6px; padding: 2px 6px; margin-left: 6px; vertical-align: middle; }
+
+  /* FAB */
+  .fab {
+    position: fixed; bottom: 26px; left: 50%; transform: translateX(calc(-50% + 200px));
+    width: 54px; height: 54px; border-radius: 50%; background: var(--accent); color: #fff;
+    font-size: 26px; border: none; display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 8px 18px rgba(47,111,237,0.4); cursor: pointer; z-index: 10;
+  }
+  @media (max-width: 480px) { .fab { transform: none; right: 20px; left: auto; } }
+
+  /* Modal */
+  .modal-overlay {
+    position: fixed; inset: 0; background: rgba(15,17,23,0.45); display: none;
+    align-items: flex-end; justify-content: center; z-index: 20;
+  }
+  .modal-overlay.open { display: flex; }
+  .modal {
+    background: var(--bg); width: 100%; max-width: 480px; max-height: 92vh; overflow-y: auto;
+    border-radius: 20px 20px 0 0; padding-bottom: 24px;
+  }
+  .modal-header { padding: 16px; display: flex; align-items: center; gap: 10px; position: sticky; top: 0; background: var(--bg); border-bottom: 1px solid var(--border); }
+  .modal-title { font-size: 16px; font-weight: 700; margin: 0; flex: 1; }
+  .close-btn { font-size: 20px; color: var(--muted); background: none; border: none; cursor: pointer; }
+  .modal-body { padding: 14px 16px 0; display: flex; flex-direction: column; gap: 14px; }
+  .field label { display: block; font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 5px; }
+  .field input, .field select, .field textarea {
+    width: 100%; border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px;
+    font-size: 14px; color: var(--text); background: var(--card); font-family: inherit;
+  }
+  .row-2 { display: flex; gap: 10px; }
+  .row-2 .field { flex: 1; }
+  .parts-block { border: 1px dashed var(--border); border-radius: 12px; padding: 10px; }
+  .parts-block-title { font-size: 12px; font-weight: 700; margin-bottom: 8px; }
+  .part-row { display: flex; gap: 8px; margin-bottom: 8px; }
+  .part-row input:first-child { flex: 2; }
+  .part-row input:last-child { flex: 1; }
+  .part-row .remove-part { background: none; border: none; color: var(--danger); font-size: 16px; cursor: pointer; padding: 0 4px; }
+  .add-part-link { font-size: 12.5px; font-weight: 600; color: var(--accent); background: none; border: none; cursor: pointer; padding: 0; }
+  .save-btn {
+    margin-top: 4px; background: var(--accent); color: #fff; border: none; border-radius: 12px;
+    padding: 13px; font-size: 14.5px; font-weight: 700; text-align: center; cursor: pointer; width: 100%;
+  }
+  .save-btn:disabled { opacity: 0.6; }
+
+  .config-warning {
+    margin: 16px; padding: 12px 14px; background: var(--danger-soft); border: 1px solid #f3c9c9;
+    border-radius: 12px; font-size: 12.5px; color: #7a1f1f; line-height: 1.5;
+  }
+  .config-warning code { background: rgba(0,0,0,0.06); padding: 1px 4px; border-radius: 4px; }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <div id="configWarning" class="config-warning" style="display:none">
+    Configure a URL do seu Worker no início do arquivo <code>app.html</code>
+    (constante <code>API_BASE_URL</code>) antes de usar.
+  </div>
+
+  <div class="app-header">
+    <p class="app-title">Serviços do Veículo</p>
+    <div class="tabs" id="tabs"></div>
+  </div>
+
+  <div class="summary" id="summary"></div>
+
+  <div class="search-row">
+    <div class="search-box">
+      🔎 <input type="text" id="searchInput" placeholder="Buscar serviço...">
+    </div>
+  </div>
+
+  <div class="list" id="list"></div>
+
+  <button class="fab" id="fabAdd">+</button>
+</div>
+
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal">
+    <div class="modal-header">
+      <p class="modal-title" id="modalTitle">Novo serviço</p>
+      <button class="close-btn" id="closeModal">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="field">
+        <label>Veículo</label>
+        <select id="fVeiculo"></select>
+      </div>
+
+      <div class="row-2">
+        <div class="field">
+          <label>Data</label>
+          <input type="date" id="fData">
+        </div>
+        <div class="field">
+          <label>Km</label>
+          <input type="number" id="fKm" placeholder="ex: 93500">
+        </div>
+      </div>
+
+      <div class="field">
+        <label>Serviço realizado</label>
+        <input type="text" id="fServico" placeholder="ex: Troca de óleo e filtro">
+      </div>
+
+      <div class="field">
+        <label>Preço total (R$)</label>
+        <input type="number" step="0.01" id="fPreco" placeholder="0.00">
+      </div>
+
+      <div class="parts-block">
+        <div class="parts-block-title">Peças trocadas</div>
+        <div id="partsRows"></div>
+        <button type="button" class="add-part-link" id="addPartBtn">+ adicionar outra peça</button>
+      </div>
+
+      <div class="field">
+        <label>Observações</label>
+        <textarea rows="2" id="fObs" placeholder="ex: lembrete, marca do óleo..."></textarea>
+      </div>
+
+      <button class="save-btn" id="saveBtn">Salvar serviço</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ============================================================
+   CONFIGURAÇÃO — preencha antes de usar
+   Cole aqui a URL do seu Worker (Cloudflare), algo como:
+   https://servicos-veiculos-api.SEU-USUARIO.workers.dev
+   ============================================================ */
+const API_BASE_URL = "https://servicos-veiculos-api.lucaslbrena-dev.workers.dev";
+
+/* ============================================================ */
+
+let veiculos = [];
+let currentVeiculoId = null;
+let servicos = [];
+let editingServicoId = null;
+
+function isConfigured() {
+  return API_BASE_URL && API_BASE_URL.startsWith("http");
+}
+
+async function api(path, options = {}) {
+  const res = await fetch(API_BASE_URL + path, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...(options.headers || {}),
+    },
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`Erro na API (${res.status}): ${text || res.statusText}`);
+  }
+  if (res.status === 204) return null;
+  return res.json();
+}
+
+function fmtMoeda(v) {
+  if (v === null || v === undefined || v === "") return "—";
+  return "R$ " + Number(v).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function fmtKm(v) {
+  if (v === null || v === undefined || v === "") return null;
+  return Number(v).toLocaleString("pt-BR") + " km";
+}
+
+function fmtData(v) {
+  if (!v) return null;
+  const [y, m, d] = v.split("-");
+  return `${d}/${m}/${y}`;
+}
+
+/* ---------- Carregamento ---------- */
+
+async function loadVeiculos() {
+  veiculos = await api("/veiculos");
+  const tabsEl = document.getElementById("tabs");
+  tabsEl.innerHTML = "";
+  veiculos.forEach((v) => {
+    const btn = document.createElement("button");
+    btn.className = "tab" + (v.id === currentVeiculoId ? " active" : "");
+    btn.textContent = (v.tipo === "moto" ? "🏍️ " : "🚗 ") + v.nome;
+    btn.onclick = () => selecionarVeiculo(v.id);
+    tabsEl.appendChild(btn);
+  });
+  if (!currentVeiculoId && veiculos.length) {
+    currentVeiculoId = veiculos[0].id;
+  }
+}
+
+async function loadServicos() {
+  if (!currentVeiculoId) return;
+  servicos = await api(`/servicos?veiculo_id=${currentVeiculoId}`);
+}
+
+async function selecionarVeiculo(id) {
+  currentVeiculoId = id;
+  await loadServicos();
+  renderTabsActive();
+  renderSummary();
+  renderList();
+}
+
+function renderTabsActive() {
+  document.querySelectorAll(".tab").forEach((btn, idx) => {
+    btn.classList.toggle("active", veiculos[idx].id === currentVeiculoId);
+  });
+}
+
+/* ---------- Render ---------- */
+
+function renderSummary() {
+  const v = veiculos.find((x) => x.id === currentVeiculoId);
+  const totalGasto = servicos.reduce((sum, s) => sum + (Number(s.preco) || 0), 0);
+  const el = document.getElementById("summary");
+  el.innerHTML = `
+    <div class="stat">
+      <div class="stat-label">Km atual</div>
+      <div class="stat-value">${v && v.km ? fmtKm(v.km) : "—"}</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">Total gasto</div>
+      <div class="stat-value">${fmtMoeda(totalGasto)}</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">Serviços</div>
+      <div class="stat-value">${servicos.length}</div>
+    </div>
+  `;
+}
+
+function renderList() {
+  const term = document.getElementById("searchInput").value.trim().toLowerCase();
+  const el = document.getElementById("list");
+  const filtrados = servicos.filter((s) =>
+    !term || s.servico_realizado.toLowerCase().includes(term)
+  );
+
+  if (!filtrados.length) {
+    el.innerHTML = `<div class="empty-state">Nenhum serviço encontrado.</div>`;
+    return;
+  }
+
+  el.innerHTML = filtrados
+    .map((s) => {
+      const semData = !s.data ? `<span class="badge-warn">sem data</span>` : "";
+      const semKm = !s.km ? `<span class="badge-warn">sem km</span>` : "";
+      const metaParts = [fmtData(s.data), fmtKm(s.km)].filter(Boolean).join(" · ");
+      const pecas = (s.pecas_trocadas || []).map((p) => p.nome_peca).join(", ");
+      return `
+        <div class="card">
+          <div class="card-top">
+            <div>
+              <p class="card-service">${escapeHtml(s.servico_realizado)}${semData}${semKm}</p>
+              <div class="card-meta">${metaParts || "—"}</div>
+            </div>
+            <div class="card-price">${fmtMoeda(s.preco)}</div>
+          </div>
+          ${pecas ? `<div class="card-parts">🔧 ${escapeHtml(pecas)}</div>` : ""}
+          ${s.observacoes ? `<div class="card-obs">${escapeHtml(s.observacoes)}</div>` : ""}
+          <div class="card-actions">
+            <button class="btn-mini" onclick="abrirEdicao(${s.id})">Editar</button>
+            <button class="btn-mini danger" onclick="apagarServico(${s.id})">Apagar</button>
+          </div>
+        </div>
+      `;
+    })
+    .join("");
+}
+
+function escapeHtml(str) {
+  const div = document.createElement("div");
+  div.textContent = str ?? "";
+  return div.innerHTML;
+}
+
+/* ---------- Modal / Formulário ---------- */
+
+function preencherSelectVeiculos() {
+  const sel = document.getElementById("fVeiculo");
+  sel.innerHTML = veiculos
+    .map((v) => `<option value="${v.id}">${(v.tipo === "moto" ? "🏍️ " : "🚗 ")}${escapeHtml(v.nome)}</option>`)
+    .join("");
+}
+
+function novaLinhaPeca(nome = "", preco = "") {
+  const row = document.createElement("div");
+  row.className = "part-row";
+  row.innerHTML = `
+    <input type="text" class="part-nome" placeholder="Nome da peça" value="${escapeHtml(nome)}">
+    <input type="number" step="0.01" class="part-preco" placeholder="R$" value="${preco ?? ""}">
+    <button type="button" class="remove-part" title="Remover">✕</button>
+  `;
+  row.querySelector(".remove-part").onclick = () => row.remove();
+  document.getElementById("partsRows").appendChild(row);
+}
+
+function abrirModal() {
+  document.getElementById("modalOverlay").classList.add("open");
+}
+function fecharModal() {
+  document.getElementById("modalOverlay").classList.remove("open");
+}
+
+function limparFormulario() {
+  editingServicoId = null;
+  document.getElementById("modalTitle").textContent = "Novo serviço";
+  preencherSelectVeiculos();
+  document.getElementById("fVeiculo").value = currentVeiculoId;
+  document.getElementById("fData").value = "";
+  document.getElementById("fKm").value = "";
+  document.getElementById("fServico").value = "";
+  document.getElementById("fPreco").value = "";
+  document.getElementById("fObs").value = "";
+  document.getElementById("partsRows").innerHTML = "";
+  novaLinhaPeca();
+}
+
+function abrirNovoServico() {
+  limparFormulario();
+  abrirModal();
+}
+
+function abrirEdicao(servicoId) {
+  const s = servicos.find((x) => x.id === servicoId);
+  if (!s) return;
+  editingServicoId = servicoId;
+  document.getElementById("modalTitle").textContent = "Editar serviço";
+  preencherSelectVeiculos();
+  document.getElementById("fVeiculo").value = s.veiculo_id;
+  document.getElementById("fData").value = s.data || "";
+  document.getElementById("fKm").value = s.km ?? "";
+  document.getElementById("fServico").value = s.servico_realizado;
+  document.getElementById("fPreco").value = s.preco ?? "";
+  document.getElementById("fObs").value = s.observacoes || "";
+  document.getElementById("partsRows").innerHTML = "";
+  const pecas = s.pecas_trocadas || [];
+  if (pecas.length) {
+    pecas.forEach((p) => novaLinhaPeca(p.nome_peca, p.preco));
+  } else {
+    novaLinhaPeca();
+  }
+  abrirModal();
+}
+
+async function salvarServico() {
+  const veiculoId = Number(document.getElementById("fVeiculo").value);
+  const data = document.getElementById("fData").value || null;
+  const km = document.getElementById("fKm").value ? Number(document.getElementById("fKm").value) : null;
+  const servicoRealizado = document.getElementById("fServico").value.trim();
+  const preco = document.getElementById("fPreco").value ? Number(document.getElementById("fPreco").value) : null;
+  const observacoes = document.getElementById("fObs").value.trim() || null;
+
+  if (!servicoRealizado) {
+    alert("Preencha o nome do serviço realizado.");
+    return;
+  }
+
+  const pecas = Array.from(document.querySelectorAll("#partsRows .part-row"))
+    .map((row) => ({
+      nome_peca: row.querySelector(".part-nome").value.trim(),
+      preco: row.querySelector(".part-preco").value ? Number(row.querySelector(".part-preco").value) : null,
+    }))
+    .filter((p) => p.nome_peca);
+
+  const saveBtn = document.getElementById("saveBtn");
+  saveBtn.disabled = true;
+  saveBtn.textContent = "Salvando...";
+
+  try {
+    let servicoId = editingServicoId;
+
+    if (editingServicoId) {
+      await api(`/servicos/${editingServicoId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ veiculo_id: veiculoId, data, km, servico_realizado: servicoRealizado, preco, observacoes }),
+      });
+      // remove peças antigas e insere as atuais (mais simples que fazer diff)
+      await api(`/pecas?servico_id=${editingServicoId}`, { method: "DELETE" });
+    } else {
+      const criado = await api("/servicos", {
+        method: "POST",
+        body: JSON.stringify({ veiculo_id: veiculoId, data, km, servico_realizado: servicoRealizado, preco, observacoes }),
+      });
+      servicoId = criado.id;
+    }
+
+    if (pecas.length) {
+      await api("/pecas", {
+        method: "POST",
+        body: JSON.stringify(pecas.map((p) => ({ ...p, servico_id: servicoId }))),
+      });
+    }
+
+    fecharModal();
+    await selecionarVeiculo(veiculoId);
+  } catch (err) {
+    alert("Não foi possível salvar: " + err.message);
+  } finally {
+    saveBtn.disabled = false;
+    saveBtn.textContent = "Salvar serviço";
+  }
+}
+
+async function apagarServico(servicoId) {
+  if (!confirm("Apagar este serviço? Essa ação não pode ser desfeita.")) return;
+  try {
+    await api(`/servicos/${servicoId}`, { method: "DELETE" });
+    await loadServicos();
+    renderSummary();
+    renderList();
+  } catch (err) {
+    alert("Não foi possível apagar: " + err.message);
+  }
+}
+
+/* ---------- Eventos ---------- */
+
+document.getElementById("fabAdd").onclick = abrirNovoServico;
+document.getElementById("closeModal").onclick = fecharModal;
+document.getElementById("modalOverlay").onclick = (e) => {
+  if (e.target.id === "modalOverlay") fecharModal();
+};
+document.getElementById("addPartBtn").onclick = () => novaLinhaPeca();
+document.getElementById("saveBtn").onclick = salvarServico;
+document.getElementById("searchInput").oninput = renderList;
+
+/* ---------- Início ---------- */
+
+async function init() {
+  if (!isConfigured()) {
+    document.getElementById("configWarning").style.display = "block";
+    return;
+  }
+  try {
+    await loadVeiculos();
+    await selecionarVeiculo(currentVeiculoId);
+  } catch (err) {
+    document.getElementById("list").innerHTML =
+      `<div class="empty-state">Erro ao carregar dados: ${escapeHtml(err.message)}</div>`;
+  }
+}
+
+init();
+</script>
+
+</body>
+</html>
