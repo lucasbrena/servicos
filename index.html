@@ -95,6 +95,11 @@
     content: ""; position: absolute; left: 50%; bottom: 3px; transform: translateX(-50%);
     width: 16px; height: 3px; border-radius: 2px; background: var(--accent);
   }
+  .vehicle-info {
+    display: flex; align-items: center; justify-content: center; gap: 4px; flex-wrap: wrap;
+    padding: 8px 4px 0; font-size: 12px; color: var(--muted); text-align: center;
+  }
+  .vehicle-info .add-part-link { font-size: 12px; }
 
   /* Summary */
   .summary { display: flex; gap: 8px; padding: 12px 16px 4px; }
@@ -254,6 +259,7 @@
   <div class="app-header">
     <p class="app-title">Serviços do Veículo</p>
     <div class="tabs" id="tabs"></div>
+    <div class="vehicle-info" id="vehicleInfo"></div>
   </div>
 
   <div class="summary" id="summary"></div>
@@ -537,6 +543,7 @@ async function selecionarVeiculo(id) {
   aplicarTemaVeiculo();
   await loadServicos();
   renderTabsActive();
+  renderVehicleInfo();
   renderSummary();
   renderLembrete();
   renderChart();
@@ -547,6 +554,28 @@ function renderTabsActive() {
   document.querySelectorAll(".tab").forEach((btn, idx) => {
     btn.classList.toggle("active", veiculos[idx].id === currentVeiculoId);
   });
+}
+
+// Linha com marca/modelo/ano/placa do veículo selecionado, logo abaixo das
+// abas. Se algum desses dados ainda não foi preenchido, mostra um convite
+// pra completar em vez de deixar a linha em branco.
+function renderVehicleInfo() {
+  const v = veiculos.find((x) => x.id === currentVeiculoId);
+  const el = document.getElementById("vehicleInfo");
+  if (!v) {
+    el.innerHTML = "";
+    return;
+  }
+
+  const partes = [];
+  const marcaModelo = [v.marca, v.modelo].filter(Boolean).join(" ");
+  if (marcaModelo) partes.push(escapeHtml(marcaModelo));
+  if (v.ano) partes.push(`Ano ${v.ano}`);
+  if (v.placa) partes.push(escapeHtml(v.placa));
+
+  el.innerHTML = partes.length
+    ? `<span>${partes.join(" · ")}</span><button class="edit-km-btn" onclick="abrirEdicaoVeiculo()" title="Editar veículo">✏️</button>`
+    : `<button class="add-part-link" onclick="abrirEdicaoVeiculo()">+ preencher marca, modelo, ano e placa</button>`;
 }
 
 /* ---------- Editar veículo: marca/modelo/ano/placa/km (modal, sem prompt()) ---------- */
@@ -594,6 +623,7 @@ async function salvarVeiculo() {
       body: JSON.stringify({ marca, modelo, ano, placa, km: kmNum }),
     });
     Object.assign(v, atualizado);
+    renderVehicleInfo();
     renderSummary();
     renderLembrete();
     fecharVeiculoModal();
