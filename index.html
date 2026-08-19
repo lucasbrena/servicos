@@ -132,7 +132,8 @@
   /* List */
   .list { padding: 10px 16px 20px; display: flex; flex-direction: column; gap: 10px; }
   .empty-state { text-align: center; color: var(--muted); font-size: 13px; padding: 40px 20px; }
-  .card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 12px 14px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 12px 14px; cursor: pointer; transition: background 0.15s ease; }
+  .card:active { background: var(--accent-soft); }
   .card-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
   .card-service { font-size: 14px; font-weight: 700; margin: 0 0 3px; }
   .card-meta { font-size: 12px; color: var(--muted); }
@@ -198,6 +199,17 @@
   .save-btn:disabled { opacity: 0.6; }
   .btn-row-2 { display: flex; gap: 10px; }
   .btn-row-2 .btn-mini { flex: 1; padding: 11px; font-size: 13px; }
+
+  /* Modal de detalhes do serviço */
+  .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .detail-label { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; margin-bottom: 4px; }
+  .detail-value { font-size: 14px; font-weight: 600; }
+  .detail-price { color: var(--accent); font-size: 17px; }
+  .detail-section { border-top: 1px solid var(--border); padding-top: 12px; }
+  .detail-peca-row { display: flex; justify-content: space-between; gap: 10px; font-size: 13px; padding: 7px 0; border-bottom: 1px dashed var(--border); }
+  .detail-peca-row:last-child { border-bottom: none; }
+  .detail-empty { font-size: 12.5px; color: var(--muted); }
+  .detail-obs { font-size: 13px; color: var(--text); line-height: 1.5; white-space: pre-wrap; }
 
   .config-warning {
     margin: 16px; padding: 12px 14px; background: var(--danger-soft); border: 1px solid #f3c9c9;
@@ -326,6 +338,17 @@
         <button class="btn-mini danger" id="confirmOkBtn">Apagar</button>
       </div>
     </div>
+  </div>
+</div>
+
+<!-- Modal: detalhes do serviço (abre ao clicar no card) -->
+<div class="modal-overlay" id="detailModalOverlay">
+  <div class="modal">
+    <div class="modal-header">
+      <p class="modal-title" id="detailTitle">Serviço</p>
+      <button class="close-btn" id="closeDetailModal">✕</button>
+    </div>
+    <div class="modal-body" id="detailBody"></div>
   </div>
 </div>
 
@@ -695,7 +718,7 @@ function renderList() {
       const metaParts = [fmtData(s.data), fmtKm(s.km)].filter(Boolean).join(" · ");
       const pecas = (s.pecas_trocadas || []).map((p) => p.nome_peca).join(", ");
       return `
-        <div class="card">
+        <div class="card" onclick="abrirDetalhe(${s.id})">
           <div class="card-top">
             <div>
               <p class="card-service">${escapeHtml(s.servico_realizado)}${semData}${semKm}</p>
@@ -706,8 +729,8 @@ function renderList() {
           ${pecas ? `<div class="card-parts">🔧 ${escapeHtml(pecas)}</div>` : ""}
           ${s.observacoes ? `<div class="card-obs">${escapeHtml(s.observacoes)}</div>` : ""}
           <div class="card-actions">
-            <button class="btn-mini" onclick="abrirEdicao(${s.id})">Editar</button>
-            <button class="btn-mini danger" onclick="apagarServico(${s.id})">Apagar</button>
+            <button class="btn-mini" onclick="event.stopPropagation(); abrirEdicao(${s.id})">Editar</button>
+            <button class="btn-mini danger" onclick="event.stopPropagation(); apagarServico(${s.id})">Apagar</button>
           </div>
         </div>
       `;
@@ -719,6 +742,75 @@ function escapeHtml(str) {
   const div = document.createElement("div");
   div.textContent = str ?? "";
   return div.innerHTML;
+}
+
+/* ---------- Detalhe do serviço (abre ao clicar no card) ---------- */
+
+function abrirDetalhe(servicoId) {
+  const s = servicos.find((x) => x.id === servicoId);
+  if (!s) return;
+  const v = veiculos.find((x) => x.id === s.veiculo_id);
+
+  document.getElementById("detailTitle").textContent = s.servico_realizado;
+
+  const pecas = s.pecas_trocadas || [];
+  const pecasHtml = pecas.length
+    ? pecas
+        .map(
+          (p) => `
+        <div class="detail-peca-row">
+          <span>${escapeHtml(p.nome_peca)}</span>
+          <span>${fmtMoeda(p.preco)}</span>
+        </div>`
+        )
+        .join("")
+    : `<div class="detail-empty">Nenhuma peça registrada nesse serviço.</div>`;
+
+  document.getElementById("detailBody").innerHTML = `
+    <div class="detail-grid">
+      <div>
+        <div class="detail-label">Veículo</div>
+        <div class="detail-value">${v ? (v.tipo === "moto" ? "🏍️ " : "🚗 ") + escapeHtml(v.nome) : "—"}</div>
+      </div>
+      <div>
+        <div class="detail-label">Preço total</div>
+        <div class="detail-value detail-price">${fmtMoeda(s.preco)}</div>
+      </div>
+      <div>
+        <div class="detail-label">Data</div>
+        <div class="detail-value">${fmtData(s.data) || "—"}</div>
+      </div>
+      <div>
+        <div class="detail-label">Km no serviço</div>
+        <div class="detail-value">${fmtKm(s.km) || "—"}</div>
+      </div>
+    </div>
+
+    <div class="detail-section">
+      <div class="detail-label">Peças trocadas</div>
+      ${pecasHtml}
+    </div>
+
+    ${
+      s.observacoes
+        ? `<div class="detail-section">
+             <div class="detail-label">Observações</div>
+             <div class="detail-obs">${escapeHtml(s.observacoes)}</div>
+           </div>`
+        : ""
+    }
+
+    <div class="btn-row-2">
+      <button class="btn-mini" onclick="fecharDetalhe(); abrirEdicao(${s.id})">Editar</button>
+      <button class="btn-mini danger" onclick="fecharDetalhe(); apagarServico(${s.id})">Apagar</button>
+    </div>
+  `;
+
+  document.getElementById("detailModalOverlay").classList.add("open");
+}
+
+function fecharDetalhe() {
+  document.getElementById("detailModalOverlay").classList.remove("open");
 }
 
 /* ---------- Modal / Formulário ---------- */
@@ -894,6 +986,11 @@ document.getElementById("confirmCancelBtn").onclick = () => closeConfirmDialog(f
 document.getElementById("confirmOkBtn").onclick = () => closeConfirmDialog(true);
 document.getElementById("confirmModalOverlay").onclick = (e) => {
   if (e.target.id === "confirmModalOverlay") closeConfirmDialog(false);
+};
+
+document.getElementById("closeDetailModal").onclick = fecharDetalhe;
+document.getElementById("detailModalOverlay").onclick = (e) => {
+  if (e.target.id === "detailModalOverlay") fecharDetalhe();
 };
 
 /* ---------- Início ---------- */
