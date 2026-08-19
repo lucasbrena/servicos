@@ -2,10 +2,23 @@
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Serviços do Veículo</title>
+
+<!-- PWA: permite "Adicionar à tela inicial" e abrir em tela cheia -->
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Serviços">
+<meta name="theme-color" content="#f4f5f7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#14161c" media="(prefers-color-scheme: dark)">
+
 <style>
   :root {
+    color-scheme: light dark;
     --bg: #f4f5f7;
     --card: #ffffff;
     --border: #e2e4e9;
@@ -17,7 +30,36 @@
     --warn-soft: #fef3e2;
     --danger: #dc2626;
     --danger-soft: #fdeaea;
+    /* cores por tipo de veículo — trocadas em --accent/--accent-soft via JS
+       quando o usuário troca de aba, pra dar identidade visual a cada um */
+    --accent-carro: #2f6fed;
+    --accent-carro-soft: #eaf1ff;
+    --accent-moto: #e2711d;
+    --accent-moto-soft: #fdf0e4;
   }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14161c;
+      --card: #1c1f27;
+      --border: #2b2f3a;
+      --text: #eef0f4;
+      --muted: #9aa0ac;
+      --accent: #5b8dff;
+      --accent-soft: #1c2740;
+      --warn: #f0a93d;
+      --warn-soft: #3a2c12;
+      --danger: #f36868;
+      --danger-soft: #3a1c1c;
+      --accent-carro: #5b8dff;
+      --accent-carro-soft: #1c2740;
+      --accent-moto: #ff9d52;
+      --accent-moto-soft: #3a2712;
+    }
+    .card-parts { background: #232631 !important; }
+    .skeleton-card::after { background: linear-gradient(90deg, transparent, rgba(255,255,255,0.06), transparent); }
+  }
+
   * { box-sizing: border-box; }
   body {
     margin: 0;
@@ -34,12 +76,25 @@
     padding-bottom: 100px;
   }
 
+  /* Barra de carregamento (fica visível durante chamadas à API) */
+  .loading-bar {
+    position: fixed; top: 0; left: 0; height: 3px; width: 0%;
+    background: var(--accent); z-index: 50; opacity: 0;
+    transition: width 0.4s ease, opacity 0.2s ease;
+  }
+  .loading-bar.active { opacity: 1; width: 70%; }
+
   /* Header */
   .app-header { padding: 18px 16px 10px; position: sticky; top: 0; background: var(--bg); z-index: 5; }
   .app-title { font-size: 19px; font-weight: 700; margin: 0 0 12px; }
   .tabs { display: flex; gap: 4px; background: #e7e9ee; border-radius: 10px; padding: 3px; }
-  .tab { flex: 1; text-align: center; padding: 8px 4px; border-radius: 8px; font-size: 13px; font-weight: 600; color: var(--muted); cursor: pointer; border: none; background: none; }
+  @media (prefers-color-scheme: dark) { .tabs { background: #23262f; } }
+  .tab { flex: 1; text-align: center; padding: 8px 4px; border-radius: 8px; font-size: 13px; font-weight: 600; color: var(--muted); cursor: pointer; border: none; background: none; position: relative; }
   .tab.active { background: var(--card); color: var(--text); box-shadow: 0 1px 2px rgba(0,0,0,0.08); }
+  .tab.active::after {
+    content: ""; position: absolute; left: 50%; bottom: 3px; transform: translateX(-50%);
+    width: 16px; height: 3px; border-radius: 2px; background: var(--accent);
+  }
 
   /* Summary */
   .summary { display: flex; gap: 8px; padding: 12px 16px 4px; }
@@ -48,6 +103,26 @@
   .stat-value { font-size: 15px; font-weight: 700; }
   .edit-km-btn { border: none; background: none; cursor: pointer; font-size: 11px; padding: 0 0 0 2px; vertical-align: middle; opacity: 0.6; }
   .edit-km-btn:hover { opacity: 1; }
+
+  /* Lembrete de manutenção */
+  .lembrete {
+    display: none; align-items: center; gap: 8px; margin: 8px 16px 0; padding: 10px 12px;
+    border-radius: 12px; font-size: 12.5px; font-weight: 600; line-height: 1.4;
+  }
+  .lembrete-icon { font-size: 15px; }
+  .lembrete-ok { background: var(--accent-soft); color: var(--accent); }
+  .lembrete-warn { background: var(--warn-soft); color: var(--warn); }
+  .lembrete-danger { background: var(--danger-soft); color: var(--danger); }
+
+  /* Gráfico de gasto por mês */
+  .chart-block { display: none; margin: 8px 16px 0; background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 12px 14px; }
+  .chart-title { font-size: 10.5px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; margin-bottom: 10px; }
+  .chart-bars { display: flex; align-items: flex-end; gap: 6px; height: 70px; }
+  .chart-col { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; flex: 1; min-width: 0; }
+  .chart-bar-wrap { flex: 1; display: flex; align-items: flex-end; width: 100%; }
+  .chart-bar { width: 100%; background: var(--accent); border-radius: 4px 4px 0 0; min-height: 3px; transition: height 0.3s ease; }
+  .chart-label { font-size: 9.5px; color: var(--muted); margin-top: 4px; text-transform: uppercase; }
+  .chart-value { font-size: 8.5px; color: var(--muted); margin-bottom: 2px; white-space: nowrap; }
 
   /* Search */
   .search-row { padding: 10px 16px 4px; }
@@ -65,9 +140,19 @@
   .card-obs { margin-top: 6px; font-size: 12px; color: var(--muted); font-style: italic; }
   .card-parts { margin-top: 8px; font-size: 12px; color: var(--muted); background: #f7f8fa; border-radius: 8px; padding: 6px 8px; }
   .card-actions { display: flex; gap: 6px; margin-top: 10px; }
-  .btn-mini { font-size: 11.5px; font-weight: 600; padding: 5px 10px; border-radius: 7px; border: 1px solid var(--border); background: #fff; color: var(--text); cursor: pointer; }
+  .btn-mini { font-size: 11.5px; font-weight: 600; padding: 5px 10px; border-radius: 7px; border: 1px solid var(--border); background: var(--card); color: var(--text); cursor: pointer; }
   .btn-mini.danger { color: var(--danger); border-color: #f3c9c9; }
+  @media (prefers-color-scheme: dark) { .btn-mini.danger { border-color: #5a2626; } }
   .badge-warn { display: inline-block; font-size: 10px; font-weight: 700; color: var(--warn); background: var(--warn-soft); border-radius: 6px; padding: 2px 6px; margin-left: 6px; vertical-align: middle; }
+
+  /* Skeleton (carregamento inicial) */
+  .skeleton-card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; height: 70px; position: relative; overflow: hidden; }
+  .skeleton-card::after {
+    content: ""; position: absolute; inset: 0;
+    background: linear-gradient(90deg, transparent, rgba(0,0,0,0.05), transparent);
+    animation: shimmer 1.2s infinite;
+  }
+  @keyframes shimmer { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
 
   /* FAB */
   .fab {
@@ -111,15 +196,29 @@
     padding: 13px; font-size: 14.5px; font-weight: 700; text-align: center; cursor: pointer; width: 100%;
   }
   .save-btn:disabled { opacity: 0.6; }
+  .btn-row-2 { display: flex; gap: 10px; }
+  .btn-row-2 .btn-mini { flex: 1; padding: 11px; font-size: 13px; }
 
   .config-warning {
     margin: 16px; padding: 12px 14px; background: var(--danger-soft); border: 1px solid #f3c9c9;
     border-radius: 12px; font-size: 12.5px; color: #7a1f1f; line-height: 1.5;
   }
   .config-warning code { background: rgba(0,0,0,0.06); padding: 1px 4px; border-radius: 4px; }
+
+  /* Toast (substitui alert() pra erros/avisos) */
+  .toast {
+    position: fixed; left: 50%; bottom: 96px; transform: translateX(-50%) translateY(16px);
+    background: #1f2430; color: #fff; font-size: 13px; font-weight: 600; padding: 10px 16px;
+    border-radius: 10px; opacity: 0; pointer-events: none; transition: all 0.25s ease;
+    z-index: 60; max-width: 88%; text-align: center; box-shadow: 0 8px 20px rgba(0,0,0,0.28);
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  .toast.error { background: var(--danger); }
 </style>
 </head>
 <body>
+
+<div class="loading-bar" id="loadingBar"></div>
 
 <div class="app">
   <div id="configWarning" class="config-warning" style="display:none">
@@ -133,10 +232,12 @@
   </div>
 
   <div class="summary" id="summary"></div>
+  <div class="lembrete" id="lembreteWrap"></div>
+  <div class="chart-block" id="chartWrap"></div>
 
   <div class="search-row">
     <div class="search-box">
-      🔎 <input type="text" id="searchInput" placeholder="Buscar serviço...">
+      🔎 <input type="text" id="searchInput" placeholder="Buscar serviço, peça ou observação...">
     </div>
   </div>
 
@@ -145,6 +246,7 @@
   <button class="fab" id="fabAdd">+</button>
 </div>
 
+<!-- Modal: novo/editar serviço -->
 <div class="modal-overlay" id="modalOverlay">
   <div class="modal">
     <div class="modal-header">
@@ -194,6 +296,41 @@
   </div>
 </div>
 
+<!-- Modal: editar km atual (substitui prompt()) -->
+<div class="modal-overlay" id="kmModalOverlay">
+  <div class="modal">
+    <div class="modal-header">
+      <p class="modal-title">Editar km atual</p>
+      <button class="close-btn" id="closeKmModal">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="field">
+        <label id="kmModalLabel">Km atual</label>
+        <input type="number" id="fKmAtual" placeholder="ex: 94200" inputmode="numeric">
+      </div>
+      <button class="save-btn" id="saveKmBtn">Salvar km</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: confirmação genérica (substitui confirm()) -->
+<div class="modal-overlay" id="confirmModalOverlay">
+  <div class="modal">
+    <div class="modal-header">
+      <p class="modal-title" id="confirmModalTitle">Confirmar</p>
+    </div>
+    <div class="modal-body">
+      <p id="confirmModalMessage" style="font-size:13.5px;color:var(--muted);line-height:1.5;margin:0;"></p>
+      <div class="btn-row-2">
+        <button class="btn-mini" id="confirmCancelBtn">Cancelar</button>
+        <button class="btn-mini danger" id="confirmOkBtn">Apagar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
 <script>
 /* ============================================================
    CONFIGURAÇÃO — preencha antes de usar
@@ -208,25 +345,41 @@ let veiculos = [];
 let currentVeiculoId = null;
 let servicos = [];
 let editingServicoId = null;
+let confirmResolve = null;
+let pendingRequests = 0;
 
 function isConfigured() {
   return API_BASE_URL && API_BASE_URL.startsWith("http");
 }
 
+function setLoading(on) {
+  document.getElementById("loadingBar").classList.toggle("active", on);
+}
+
 async function api(path, options = {}) {
-  const res = await fetch(API_BASE_URL + path, {
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      ...(options.headers || {}),
-    },
-  });
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`Erro na API (${res.status}): ${text || res.statusText}`);
+  pendingRequests++;
+  setLoading(true);
+  try {
+    const res = await fetch(API_BASE_URL + path, {
+      ...options,
+      headers: {
+        "Content-Type": "application/json",
+        ...(options.headers || {}),
+      },
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new Error(`Erro na API (${res.status}): ${text || res.statusText}`);
+    }
+    if (res.status === 204) return null;
+    return res.json();
+  } finally {
+    pendingRequests--;
+    if (pendingRequests <= 0) {
+      pendingRequests = 0;
+      setLoading(false);
+    }
   }
-  if (res.status === 204) return null;
-  return res.json();
 }
 
 function fmtMoeda(v) {
@@ -243,6 +396,35 @@ function fmtData(v) {
   if (!v) return null;
   const [y, m, d] = v.split("-");
   return `${d}/${m}/${y}`;
+}
+
+function normalizar(str) {
+  return (str || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+}
+
+let toastTimer = null;
+function toast(msg, type = "info") {
+  const el = document.getElementById("toast");
+  el.textContent = msg;
+  el.className = "toast show" + (type === "error" ? " error" : "");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => {
+    el.classList.remove("show");
+  }, 3000);
+}
+
+/* ---------- Tema por veículo (carro/moto têm cor de destaque própria) ---------- */
+
+function aplicarTemaVeiculo() {
+  const v = veiculos.find((x) => x.id === currentVeiculoId);
+  const root = document.documentElement;
+  if (v && v.tipo === "moto") {
+    root.style.setProperty("--accent", "var(--accent-moto)");
+    root.style.setProperty("--accent-soft", "var(--accent-moto-soft)");
+  } else {
+    root.style.setProperty("--accent", "var(--accent-carro)");
+    root.style.setProperty("--accent-soft", "var(--accent-carro-soft)");
+  }
 }
 
 /* ---------- Carregamento ---------- */
@@ -263,16 +445,35 @@ async function loadVeiculos() {
   }
 }
 
+// Ordena por data (mais recente primeiro); serviços sem data vão pro fim.
+// Em caso de empate, o de maior id (cadastrado por último) vem primeiro.
+function ordenarServicos(lista) {
+  return [...lista].sort((a, b) => {
+    if (a.data && b.data) {
+      if (a.data !== b.data) return a.data < b.data ? 1 : -1;
+    } else if (a.data && !b.data) {
+      return -1;
+    } else if (!a.data && b.data) {
+      return 1;
+    }
+    return (b.id || 0) - (a.id || 0);
+  });
+}
+
 async function loadServicos() {
   if (!currentVeiculoId) return;
-  servicos = await api(`/servicos?veiculo_id=${currentVeiculoId}`);
+  const dados = await api(`/servicos?veiculo_id=${currentVeiculoId}`);
+  servicos = ordenarServicos(dados);
 }
 
 async function selecionarVeiculo(id) {
   currentVeiculoId = id;
+  aplicarTemaVeiculo();
   await loadServicos();
   renderTabsActive();
   renderSummary();
+  renderLembrete();
+  renderChart();
   renderList();
 }
 
@@ -282,18 +483,29 @@ function renderTabsActive() {
   });
 }
 
-/* ---------- Editar km atual do veículo ---------- */
+/* ---------- Editar km atual do veículo (modal, sem prompt()) ---------- */
 
-async function editarKmAtual() {
+function abrirKmModal() {
+  const v = veiculos.find((x) => x.id === currentVeiculoId);
+  if (!v) return;
+  document.getElementById("kmModalLabel").textContent = `Km atual de ${v.nome}`;
+  document.getElementById("fKmAtual").value = v.km ?? "";
+  document.getElementById("kmModalOverlay").classList.add("open");
+  setTimeout(() => document.getElementById("fKmAtual").focus(), 50);
+}
+
+function fecharKmModal() {
+  document.getElementById("kmModalOverlay").classList.remove("open");
+}
+
+async function salvarKmAtual() {
   const v = veiculos.find((x) => x.id === currentVeiculoId);
   if (!v) return;
 
-  const novoKm = prompt(`Km atual de ${v.nome}:`, v.km ?? "");
-  if (novoKm === null) return; // usuário cancelou
-
-  const kmNum = Number(novoKm);
-  if (!novoKm.trim() || isNaN(kmNum) || kmNum < 0) {
-    alert("Km inválido. Digite só números.");
+  const raw = document.getElementById("fKmAtual").value;
+  const kmNum = Number(raw);
+  if (!raw.trim() || isNaN(kmNum) || kmNum < 0) {
+    toast("Km inválido. Digite só números.", "error");
     return;
   }
 
@@ -304,9 +516,126 @@ async function editarKmAtual() {
     });
     v.km = atualizado.km;
     renderSummary();
+    renderLembrete();
+    fecharKmModal();
+    toast("Km atualizado!");
   } catch (err) {
-    alert("Não foi possível atualizar o km: " + err.message);
+    toast("Não foi possível atualizar o km: " + err.message, "error");
   }
+}
+
+/* ---------- Confirmação genérica (modal, sem confirm()) ---------- */
+
+function confirmDialog(message, opts = {}) {
+  document.getElementById("confirmModalTitle").textContent = opts.title || "Confirmar";
+  document.getElementById("confirmModalMessage").textContent = message;
+  document.getElementById("confirmOkBtn").textContent = opts.okText || "Confirmar";
+  document.getElementById("confirmModalOverlay").classList.add("open");
+  return new Promise((resolve) => {
+    confirmResolve = resolve;
+  });
+}
+
+function closeConfirmDialog(result) {
+  document.getElementById("confirmModalOverlay").classList.remove("open");
+  if (confirmResolve) {
+    confirmResolve(result);
+    confirmResolve = null;
+  }
+}
+
+/* ---------- Lembrete de próxima troca de óleo ----------
+   Heurística simples: olha os serviços cujo nome contém "óleo" (com ou sem
+   acento) e que têm km preenchido, calcula o intervalo médio de km entre
+   eles, e projeta quando a próxima troca deve acontecer a partir do km
+   atual do veículo. Precisa de pelo menos 2 trocas de óleo no histórico
+   com km preenchido — sem isso, o card simplesmente não aparece. */
+function getLembreteOleo() {
+  const v = veiculos.find((x) => x.id === currentVeiculoId);
+  if (!v || !v.km) return null;
+
+  const trocas = servicos
+    .filter((s) => normalizar(s.servico_realizado).includes("oleo") && s.km)
+    .sort((a, b) => (a.km || 0) - (b.km || 0));
+
+  if (trocas.length < 2) return null;
+
+  const intervalos = [];
+  for (let i = 1; i < trocas.length; i++) {
+    const delta = trocas[i].km - trocas[i - 1].km;
+    if (delta > 0) intervalos.push(delta);
+  }
+  if (!intervalos.length) return null;
+
+  const media = intervalos.reduce((a, b) => a + b, 0) / intervalos.length;
+  const ultima = trocas[trocas.length - 1];
+  const previsto = ultima.km + media;
+  const faltam = previsto - v.km;
+
+  return { previsto: Math.round(previsto), faltam: Math.round(faltam) };
+}
+
+function renderLembrete() {
+  const el = document.getElementById("lembreteWrap");
+  const info = getLembreteOleo();
+  if (!info) {
+    el.style.display = "none";
+    el.innerHTML = "";
+    return;
+  }
+
+  const atrasado = info.faltam <= 0;
+  const perto = info.faltam > 0 && info.faltam <= 500;
+  const cls = atrasado ? "lembrete-danger" : perto ? "lembrete-warn" : "lembrete-ok";
+  const texto = atrasado
+    ? `Troca de óleo provavelmente atrasada em ${fmtKm(Math.abs(info.faltam))} (baseado no seu histórico)`
+    : `Próxima troca de óleo prevista para ~${fmtKm(info.previsto)} (faltam ${fmtKm(info.faltam)})`;
+
+  el.style.display = "flex";
+  el.className = "lembrete " + cls;
+  el.innerHTML = `<span class="lembrete-icon">🛢️</span><span>${texto}</span>`;
+}
+
+/* ---------- Gráfico de gasto por mês (sem lib, barras em CSS) ---------- */
+
+const MESES_ABREV = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
+
+function renderChart() {
+  const wrap = document.getElementById("chartWrap");
+  const porMes = {};
+  servicos.forEach((s) => {
+    if (!s.data) return;
+    const mes = s.data.slice(0, 7); // "AAAA-MM"
+    porMes[mes] = (porMes[mes] || 0) + (Number(s.preco) || 0);
+  });
+
+  const meses = Object.keys(porMes).sort();
+  if (meses.length < 2) {
+    wrap.style.display = "none";
+    wrap.innerHTML = "";
+    return;
+  }
+
+  const ultimos = meses.slice(-6);
+  const valores = ultimos.map((m) => porMes[m]);
+  const max = Math.max(...valores, 1);
+
+  const cols = ultimos
+    .map((m, i) => {
+      const v = valores[i];
+      const h = Math.max((v / max) * 100, 4);
+      const mo = Number(m.split("-")[1]);
+      return `
+        <div class="chart-col">
+          <div class="chart-value">${v > 0 ? fmtMoeda(v).replace("R$ ", "") : ""}</div>
+          <div class="chart-bar-wrap"><div class="chart-bar" style="height:${h}%"></div></div>
+          <div class="chart-label">${MESES_ABREV[mo - 1]}</div>
+        </div>`;
+    })
+    .join("");
+
+  wrap.style.display = "block";
+  wrap.innerHTML = `<div class="chart-title">Gasto por mês</div><div class="chart-bars">${cols}</div>`;
 }
 
 /* ---------- Render ---------- */
@@ -320,7 +649,7 @@ function renderSummary() {
       <div class="stat-label">Km atual</div>
       <div class="stat-value">
         ${v && v.km ? fmtKm(v.km) : "—"}
-        <button class="edit-km-btn" onclick="editarKmAtual()" title="Editar km atual">✏️</button>
+        <button class="edit-km-btn" onclick="abrirKmModal()" title="Editar km atual">✏️</button>
       </div>
     </div>
     <div class="stat">
@@ -334,12 +663,25 @@ function renderSummary() {
   `;
 }
 
+function renderSkeleton() {
+  document.getElementById("list").innerHTML = Array.from({ length: 3 })
+    .map(() => `<div class="skeleton-card"></div>`)
+    .join("");
+}
+
 function renderList() {
-  const term = document.getElementById("searchInput").value.trim().toLowerCase();
+  const term = normalizar(document.getElementById("searchInput").value.trim());
   const el = document.getElementById("list");
-  const filtrados = servicos.filter((s) =>
-    !term || s.servico_realizado.toLowerCase().includes(term)
-  );
+
+  const filtrados = servicos.filter((s) => {
+    if (!term) return true;
+    const pecasStr = (s.pecas_trocadas || []).map((p) => p.nome_peca).join(" ");
+    return (
+      normalizar(s.servico_realizado).includes(term) ||
+      normalizar(s.observacoes || "").includes(term) ||
+      normalizar(pecasStr).includes(term)
+    );
+  });
 
   if (!filtrados.length) {
     el.innerHTML = `<div class="empty-state">Nenhum serviço encontrado.</div>`;
@@ -457,7 +799,7 @@ async function salvarServico() {
   const observacoes = document.getElementById("fObs").value.trim() || null;
 
   if (!servicoRealizado) {
-    alert("Preencha o nome do serviço realizado.");
+    toast("Preencha o nome do serviço realizado.", "error");
     return;
   }
 
@@ -499,8 +841,9 @@ async function salvarServico() {
 
     fecharModal();
     await selecionarVeiculo(veiculoId);
+    toast(editingServicoId ? "Serviço atualizado!" : "Serviço salvo!");
   } catch (err) {
-    alert("Não foi possível salvar: " + err.message);
+    toast("Não foi possível salvar: " + err.message, "error");
   } finally {
     saveBtn.disabled = false;
     saveBtn.textContent = "Salvar serviço";
@@ -508,14 +851,22 @@ async function salvarServico() {
 }
 
 async function apagarServico(servicoId) {
-  if (!confirm("Apagar este serviço? Essa ação não pode ser desfeita.")) return;
+  const ok = await confirmDialog("Apagar este serviço? Essa ação não pode ser desfeita.", {
+    title: "Apagar serviço",
+    okText: "Apagar",
+  });
+  if (!ok) return;
+
   try {
     await api(`/servicos/${servicoId}`, { method: "DELETE" });
     await loadServicos();
     renderSummary();
+    renderLembrete();
+    renderChart();
     renderList();
+    toast("Serviço apagado.");
   } catch (err) {
-    alert("Não foi possível apagar: " + err.message);
+    toast("Não foi possível apagar: " + err.message, "error");
   }
 }
 
@@ -530,6 +881,21 @@ document.getElementById("addPartBtn").onclick = () => novaLinhaPeca();
 document.getElementById("saveBtn").onclick = salvarServico;
 document.getElementById("searchInput").oninput = renderList;
 
+document.getElementById("closeKmModal").onclick = fecharKmModal;
+document.getElementById("kmModalOverlay").onclick = (e) => {
+  if (e.target.id === "kmModalOverlay") fecharKmModal();
+};
+document.getElementById("saveKmBtn").onclick = salvarKmAtual;
+document.getElementById("fKmAtual").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") salvarKmAtual();
+});
+
+document.getElementById("confirmCancelBtn").onclick = () => closeConfirmDialog(false);
+document.getElementById("confirmOkBtn").onclick = () => closeConfirmDialog(true);
+document.getElementById("confirmModalOverlay").onclick = (e) => {
+  if (e.target.id === "confirmModalOverlay") closeConfirmDialog(false);
+};
+
 /* ---------- Início ---------- */
 
 async function init() {
@@ -537,8 +903,10 @@ async function init() {
     document.getElementById("configWarning").style.display = "block";
     return;
   }
+  renderSkeleton();
   try {
     await loadVeiculos();
+    aplicarTemaVeiculo();
     await selecionarVeiculo(currentVeiculoId);
   } catch (err) {
     document.getElementById("list").innerHTML =
