@@ -46,6 +46,8 @@
   .stat { flex: 1; background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 10px; }
   .stat-label { font-size: 10.5px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; margin-bottom: 4px; }
   .stat-value { font-size: 15px; font-weight: 700; }
+  .edit-km-btn { border: none; background: none; cursor: pointer; font-size: 11px; padding: 0 0 0 2px; vertical-align: middle; opacity: 0.6; }
+  .edit-km-btn:hover { opacity: 1; }
 
   /* Search */
   .search-row { padding: 10px 16px 4px; }
@@ -280,6 +282,33 @@ function renderTabsActive() {
   });
 }
 
+/* ---------- Editar km atual do veículo ---------- */
+
+async function editarKmAtual() {
+  const v = veiculos.find((x) => x.id === currentVeiculoId);
+  if (!v) return;
+
+  const novoKm = prompt(`Km atual de ${v.nome}:`, v.km ?? "");
+  if (novoKm === null) return; // usuário cancelou
+
+  const kmNum = Number(novoKm);
+  if (!novoKm.trim() || isNaN(kmNum) || kmNum < 0) {
+    alert("Km inválido. Digite só números.");
+    return;
+  }
+
+  try {
+    const atualizado = await api(`/veiculos/${v.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ marca: v.marca, modelo: v.modelo, ano: v.ano, placa: v.placa, km: kmNum }),
+    });
+    v.km = atualizado.km;
+    renderSummary();
+  } catch (err) {
+    alert("Não foi possível atualizar o km: " + err.message);
+  }
+}
+
 /* ---------- Render ---------- */
 
 function renderSummary() {
@@ -289,7 +318,10 @@ function renderSummary() {
   el.innerHTML = `
     <div class="stat">
       <div class="stat-label">Km atual</div>
-      <div class="stat-value">${v && v.km ? fmtKm(v.km) : "—"}</div>
+      <div class="stat-value">
+        ${v && v.km ? fmtKm(v.km) : "—"}
+        <button class="edit-km-btn" onclick="editarKmAtual()" title="Editar km atual">✏️</button>
+      </div>
     </div>
     <div class="stat">
       <div class="stat-label">Total gasto</div>
