@@ -104,9 +104,10 @@
   .edit-km-btn { border: none; background: none; cursor: pointer; font-size: 11px; padding: 0 0 0 2px; vertical-align: middle; opacity: 0.6; }
   .edit-km-btn:hover { opacity: 1; }
 
-  /* Lembrete de manutenção */
-  .lembrete {
-    display: none; align-items: center; gap: 8px; margin: 8px 16px 0; padding: 10px 12px;
+  /* Lembretes de manutenção (podem ser vários, um por tipo de serviço recorrente) */
+  .lembrete { display: none; flex-direction: column; gap: 6px; margin: 8px 16px 0; }
+  .lembrete-item {
+    display: flex; align-items: center; gap: 8px; padding: 10px 12px;
     border-radius: 12px; font-size: 12.5px; font-weight: 600; line-height: 1.4;
   }
   .lembrete-icon { font-size: 15px; }
@@ -125,9 +126,21 @@
   .chart-value { font-size: 8.5px; color: var(--muted); margin-bottom: 2px; white-space: nowrap; }
 
   /* Search */
-  .search-row { padding: 10px 16px 4px; }
-  .search-box { display: flex; align-items: center; gap: 8px; background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 9px 12px; }
+  .search-row { padding: 10px 16px 4px; display: flex; gap: 8px; }
+  .search-box { flex: 1; display: flex; align-items: center; gap: 8px; background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 9px 12px; }
   .search-box input { border: none; outline: none; font-size: 13px; flex: 1; background: none; color: var(--text); }
+  .export-btn {
+    flex-shrink: 0; width: 40px; border-radius: 10px; border: 1px solid var(--border);
+    background: var(--card); font-size: 16px; cursor: pointer; color: var(--text);
+  }
+
+  /* Filtro por período */
+  .filter-row { display: flex; gap: 6px; padding: 8px 16px 0; flex-wrap: wrap; }
+  .filter-chip {
+    font-size: 11.5px; font-weight: 600; padding: 6px 12px; border-radius: 20px;
+    border: 1px solid var(--border); background: var(--card); color: var(--muted); cursor: pointer;
+  }
+  .filter-chip.active { background: var(--accent); color: #fff; border-color: var(--accent); }
 
   /* List */
   .list { padding: 10px 16px 20px; display: flex; flex-direction: column; gap: 10px; }
@@ -251,6 +264,13 @@
     <div class="search-box">
       🔎 <input type="text" id="searchInput" placeholder="Buscar serviço, peça ou observação...">
     </div>
+    <button class="export-btn" id="exportBtn" title="Exportar histórico em CSV">⬇️</button>
+  </div>
+
+  <div class="filter-row" id="filterRow">
+    <button class="filter-chip active" data-periodo="tudo">Tudo</button>
+    <button class="filter-chip" data-periodo="6m">6 meses</button>
+    <button class="filter-chip" data-periodo="ano">Este ano</button>
   </div>
 
   <div class="list" id="list"></div>
@@ -266,6 +286,8 @@
       <button class="close-btn" id="closeModal">✕</button>
     </div>
     <div class="modal-body">
+      <button type="button" class="add-part-link" id="repeatLastBtn" style="display:none;">🔁 Repetir último serviço</button>
+
       <div class="field">
         <label>Veículo</label>
         <select id="fVeiculo"></select>
@@ -308,19 +330,39 @@
   </div>
 </div>
 
-<!-- Modal: editar km atual (substitui prompt()) -->
-<div class="modal-overlay" id="kmModalOverlay">
+<!-- Modal: editar veículo (marca/modelo/ano/placa/km) — substitui o antigo prompt() de km -->
+<div class="modal-overlay" id="vehicleModalOverlay">
   <div class="modal">
     <div class="modal-header">
-      <p class="modal-title">Editar km atual</p>
-      <button class="close-btn" id="closeKmModal">✕</button>
+      <p class="modal-title" id="vehicleModalTitle">Editar veículo</p>
+      <button class="close-btn" id="closeVehicleModal">✕</button>
     </div>
     <div class="modal-body">
-      <div class="field">
-        <label id="kmModalLabel">Km atual</label>
-        <input type="number" id="fKmAtual" placeholder="ex: 94200" inputmode="numeric">
+      <div class="row-2">
+        <div class="field">
+          <label>Marca</label>
+          <input type="text" id="fVeicMarca" placeholder="ex: Honda">
+        </div>
+        <div class="field">
+          <label>Modelo</label>
+          <input type="text" id="fVeicModelo" placeholder="ex: XR 250 Tornado">
+        </div>
       </div>
-      <button class="save-btn" id="saveKmBtn">Salvar km</button>
+      <div class="row-2">
+        <div class="field">
+          <label>Ano</label>
+          <input type="number" id="fVeicAno" placeholder="ex: 2007" inputmode="numeric">
+        </div>
+        <div class="field">
+          <label>Placa</label>
+          <input type="text" id="fVeicPlaca" placeholder="ex: DXK-8974">
+        </div>
+      </div>
+      <div class="field">
+        <label>Km atual</label>
+        <input type="number" id="fVeicKm" placeholder="ex: 94200" inputmode="numeric">
+      </div>
+      <button class="save-btn" id="saveVehicleBtn">Salvar veículo</button>
     </div>
   </div>
 </div>
@@ -370,6 +412,7 @@ let servicos = [];
 let editingServicoId = null;
 let confirmResolve = null;
 let pendingRequests = 0;
+let filtroPeriodo = "tudo"; // "tudo" | "6m" | "ano"
 
 function isConfigured() {
   return API_BASE_URL && API_BASE_URL.startsWith("http");
@@ -506,44 +549,60 @@ function renderTabsActive() {
   });
 }
 
-/* ---------- Editar km atual do veículo (modal, sem prompt()) ---------- */
+/* ---------- Editar veículo: marca/modelo/ano/placa/km (modal, sem prompt()) ---------- */
 
-function abrirKmModal() {
+function abrirEdicaoVeiculo() {
   const v = veiculos.find((x) => x.id === currentVeiculoId);
   if (!v) return;
-  document.getElementById("kmModalLabel").textContent = `Km atual de ${v.nome}`;
-  document.getElementById("fKmAtual").value = v.km ?? "";
-  document.getElementById("kmModalOverlay").classList.add("open");
-  setTimeout(() => document.getElementById("fKmAtual").focus(), 50);
+  document.getElementById("vehicleModalTitle").textContent = `Editar ${v.nome}`;
+  document.getElementById("fVeicMarca").value = v.marca || "";
+  document.getElementById("fVeicModelo").value = v.modelo || "";
+  document.getElementById("fVeicAno").value = v.ano ?? "";
+  document.getElementById("fVeicPlaca").value = v.placa || "";
+  document.getElementById("fVeicKm").value = v.km ?? "";
+  document.getElementById("vehicleModalOverlay").classList.add("open");
 }
 
-function fecharKmModal() {
-  document.getElementById("kmModalOverlay").classList.remove("open");
+function fecharVeiculoModal() {
+  document.getElementById("vehicleModalOverlay").classList.remove("open");
 }
 
-async function salvarKmAtual() {
+async function salvarVeiculo() {
   const v = veiculos.find((x) => x.id === currentVeiculoId);
   if (!v) return;
 
-  const raw = document.getElementById("fKmAtual").value;
-  const kmNum = Number(raw);
-  if (!raw.trim() || isNaN(kmNum) || kmNum < 0) {
+  const marca = document.getElementById("fVeicMarca").value.trim();
+  const modelo = document.getElementById("fVeicModelo").value.trim();
+  const anoRaw = document.getElementById("fVeicAno").value;
+  const placa = document.getElementById("fVeicPlaca").value.trim();
+  const kmRaw = document.getElementById("fVeicKm").value;
+
+  const kmNum = Number(kmRaw);
+  if (!kmRaw.trim() || isNaN(kmNum) || kmNum < 0) {
     toast("Km inválido. Digite só números.", "error");
     return;
   }
+  const ano = anoRaw.trim() ? Number(anoRaw) : null;
+
+  const saveBtn = document.getElementById("saveVehicleBtn");
+  saveBtn.disabled = true;
+  saveBtn.textContent = "Salvando...";
 
   try {
     const atualizado = await api(`/veiculos/${v.id}`, {
       method: "PATCH",
-      body: JSON.stringify({ marca: v.marca, modelo: v.modelo, ano: v.ano, placa: v.placa, km: kmNum }),
+      body: JSON.stringify({ marca, modelo, ano, placa, km: kmNum }),
     });
-    v.km = atualizado.km;
+    Object.assign(v, atualizado);
     renderSummary();
     renderLembrete();
-    fecharKmModal();
-    toast("Km atualizado!");
+    fecharVeiculoModal();
+    toast("Veículo atualizado!");
   } catch (err) {
-    toast("Não foi possível atualizar o km: " + err.message, "error");
+    toast("Não foi possível atualizar o veículo: " + err.message, "error");
+  } finally {
+    saveBtn.disabled = false;
+    saveBtn.textContent = "Salvar veículo";
   }
 }
 
@@ -567,56 +626,96 @@ function closeConfirmDialog(result) {
   }
 }
 
-/* ---------- Lembrete de próxima troca de óleo ----------
-   Heurística simples: olha os serviços cujo nome contém "óleo" (com ou sem
-   acento) e que têm km preenchido, calcula o intervalo médio de km entre
-   eles, e projeta quando a próxima troca deve acontecer a partir do km
-   atual do veículo. Precisa de pelo menos 2 trocas de óleo no histórico
-   com km preenchido — sem isso, o card simplesmente não aparece. */
-function getLembreteOleo() {
+/* ---------- Lembretes de próxima manutenção ----------
+   Heurística: agrupa os serviços do veículo atual por palavra-chave em
+   comum no nome — não exige o texto idêntico, senão "Troca de óleo" e
+   "Troca de óleo e filtro" cairiam em grupos diferentes. Ignora palavras
+   muito genéricas (conectivos e o verbo "troca/trocar", que aparece em
+   quase todo serviço e juntaria coisas sem relação). Pra cada grupo com
+   2+ ocorrências com km preenchido, calcula o intervalo médio de km entre
+   elas e projeta quando a próxima deve acontecer a partir do km atual do
+   veículo. Cadastrar os serviços recorrentes com nomes parecidos (o botão
+   "repetir último serviço" ajuda nisso) deixa a previsão mais confiável.
+   Mostra só os 2 lembretes mais urgentes pra não poluir a tela. */
+const PALAVRAS_GENERICAS = new Set([
+  "de", "da", "do", "das", "dos", "e", "o", "a", "os", "as", "em", "no", "na",
+  "pra", "para", "com", "um", "uma", "troca", "trocar", "troquei",
+]);
+
+function palavrasChave(nome) {
+  return normalizar(nome)
+    .split(/[^a-z0-9]+/)
+    .filter((t) => t.length >= 3 && !PALAVRAS_GENERICAS.has(t));
+}
+
+function agruparServicosRecorrentes() {
+  const grupos = []; // [{ palavras: Set, itens: [...] }]
+  servicos.forEach((s) => {
+    if (!s.km || !s.servico_realizado) return;
+    const palavras = new Set(palavrasChave(s.servico_realizado));
+    if (!palavras.size) return; // nome só com palavras genéricas — não dá pra agrupar com segurança
+
+    const grupo = grupos.find((g) => [...g.palavras].some((p) => palavras.has(p)));
+    if (grupo) {
+      palavras.forEach((p) => grupo.palavras.add(p));
+      grupo.itens.push(s);
+    } else {
+      grupos.push({ palavras, itens: [s] });
+    }
+  });
+  return grupos;
+}
+
+function getLembretes() {
   const v = veiculos.find((x) => x.id === currentVeiculoId);
-  if (!v || !v.km) return null;
+  if (!v || !v.km) return [];
 
-  const trocas = servicos
-    .filter((s) => normalizar(s.servico_realizado).includes("oleo") && s.km)
-    .sort((a, b) => (a.km || 0) - (b.km || 0));
+  const lembretes = [];
+  agruparServicosRecorrentes().forEach((g) => {
+    if (g.itens.length < 2) return;
+    const ordenado = [...g.itens].sort((a, b) => (a.km || 0) - (b.km || 0));
+    const intervalos = [];
+    for (let i = 1; i < ordenado.length; i++) {
+      const delta = ordenado[i].km - ordenado[i - 1].km;
+      if (delta > 0) intervalos.push(delta);
+    }
+    if (!intervalos.length) return;
 
-  if (trocas.length < 2) return null;
+    const media = intervalos.reduce((a, b) => a + b, 0) / intervalos.length;
+    const ultima = ordenado[ordenado.length - 1];
+    const previsto = ultima.km + media;
+    const faltam = previsto - v.km;
+    // usa o nome do registro mais recente do grupo como rótulo do lembrete
+    lembretes.push({ nome: ultima.servico_realizado, previsto: Math.round(previsto), faltam: Math.round(faltam) });
+  });
 
-  const intervalos = [];
-  for (let i = 1; i < trocas.length; i++) {
-    const delta = trocas[i].km - trocas[i - 1].km;
-    if (delta > 0) intervalos.push(delta);
-  }
-  if (!intervalos.length) return null;
-
-  const media = intervalos.reduce((a, b) => a + b, 0) / intervalos.length;
-  const ultima = trocas[trocas.length - 1];
-  const previsto = ultima.km + media;
-  const faltam = previsto - v.km;
-
-  return { previsto: Math.round(previsto), faltam: Math.round(faltam) };
+  lembretes.sort((a, b) => a.faltam - b.faltam);
+  return lembretes.slice(0, 2);
 }
 
 function renderLembrete() {
   const el = document.getElementById("lembreteWrap");
-  const info = getLembreteOleo();
-  if (!info) {
+  const lembretes = getLembretes();
+
+  if (!lembretes.length) {
     el.style.display = "none";
     el.innerHTML = "";
     return;
   }
 
-  const atrasado = info.faltam <= 0;
-  const perto = info.faltam > 0 && info.faltam <= 500;
-  const cls = atrasado ? "lembrete-danger" : perto ? "lembrete-warn" : "lembrete-ok";
-  const texto = atrasado
-    ? `Troca de óleo provavelmente atrasada em ${fmtKm(Math.abs(info.faltam))} (baseado no seu histórico)`
-    : `Próxima troca de óleo prevista para ~${fmtKm(info.previsto)} (faltam ${fmtKm(info.faltam)})`;
-
   el.style.display = "flex";
-  el.className = "lembrete " + cls;
-  el.innerHTML = `<span class="lembrete-icon">🛢️</span><span>${texto}</span>`;
+  el.innerHTML = lembretes
+    .map((info) => {
+      const atrasado = info.faltam <= 0;
+      const perto = info.faltam > 0 && info.faltam <= 500;
+      const cls = atrasado ? "lembrete-danger" : perto ? "lembrete-warn" : "lembrete-ok";
+      const icone = normalizar(info.nome).includes("oleo") ? "🛢️" : "🔧";
+      const texto = atrasado
+        ? `${escapeHtml(info.nome)}: provavelmente atrasado em ${fmtKm(Math.abs(info.faltam))}`
+        : `${escapeHtml(info.nome)}: previsto para ~${fmtKm(info.previsto)} (faltam ${fmtKm(info.faltam)})`;
+      return `<div class="lembrete-item ${cls}"><span class="lembrete-icon">${icone}</span><span>${texto}</span></div>`;
+    })
+    .join("");
 }
 
 /* ---------- Gráfico de gasto por mês (sem lib, barras em CSS) ---------- */
@@ -672,7 +771,7 @@ function renderSummary() {
       <div class="stat-label">Km atual</div>
       <div class="stat-value">
         ${v && v.km ? fmtKm(v.km) : "—"}
-        <button class="edit-km-btn" onclick="abrirKmModal()" title="Editar km atual">✏️</button>
+        <button class="edit-km-btn" onclick="abrirEdicaoVeiculo()" title="Editar veículo">✏️</button>
       </div>
     </div>
     <div class="stat">
@@ -692,11 +791,31 @@ function renderSkeleton() {
     .join("");
 }
 
+// Filtro por período: "tudo" mostra tudo; "6m"/"ano" exigem data preenchida
+// (serviço sem data não tem como saber se cai no período, então some do
+// filtro — mas continua contando nos totais do resumo).
+function passaFiltroPeriodo(s) {
+  if (filtroPeriodo === "tudo") return true;
+  if (!s.data) return false;
+  const hoje = new Date();
+  const dataServico = new Date(s.data + "T00:00:00");
+  if (filtroPeriodo === "6m") {
+    const limite = new Date(hoje);
+    limite.setMonth(limite.getMonth() - 6);
+    return dataServico >= limite;
+  }
+  if (filtroPeriodo === "ano") {
+    return dataServico.getFullYear() === hoje.getFullYear();
+  }
+  return true;
+}
+
 function renderList() {
   const term = normalizar(document.getElementById("searchInput").value.trim());
   const el = document.getElementById("list");
 
   const filtrados = servicos.filter((s) => {
+    if (!passaFiltroPeriodo(s)) return false;
     if (!term) return true;
     const pecasStr = (s.pecas_trocadas || []).map((p) => p.nome_peca).join(" ");
     return (
@@ -707,7 +826,7 @@ function renderList() {
   });
 
   if (!filtrados.length) {
-    el.innerHTML = `<div class="empty-state">Nenhum serviço encontrado.</div>`;
+    el.innerHTML = `<div class="empty-state">Nenhum serviço encontrado${filtroPeriodo !== "tudo" ? " nesse período" : ""}.</div>`;
     return;
   }
 
@@ -742,6 +861,51 @@ function escapeHtml(str) {
   const div = document.createElement("div");
   div.textContent = str ?? "";
   return div.innerHTML;
+}
+
+/* ---------- Exportar histórico em CSV ---------- */
+
+function csvEscape(valor) {
+  const str = String(valor ?? "");
+  if (/["\n,;]/.test(str)) {
+    return '"' + str.replace(/"/g, '""') + '"';
+  }
+  return str;
+}
+
+function exportarCsv() {
+  if (!servicos.length) {
+    toast("Não há serviços pra exportar nesse veículo.", "error");
+    return;
+  }
+  const v = veiculos.find((x) => x.id === currentVeiculoId);
+
+  const linhas = [["Data", "Km", "Serviço", "Preço total (R$)", "Peças trocadas", "Preço das peças (R$)", "Observações"]];
+  servicos.forEach((s) => {
+    const pecas = s.pecas_trocadas || [];
+    linhas.push([
+      fmtData(s.data) || "",
+      s.km ?? "",
+      s.servico_realizado,
+      s.preco ?? "",
+      pecas.map((p) => p.nome_peca).join("; "),
+      pecas.map((p) => (p.preco ?? "")).join("; "),
+      s.observacoes || "",
+    ]);
+  });
+
+  const csv = linhas.map((linha) => linha.map(csvEscape).join(",")).join("\r\n");
+  const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const nomeArquivo = `servicos_${(v ? v.nome : "veiculo").toLowerCase().replace(/\s+/g, "_")}_${new Date().toISOString().slice(0, 10)}.csv`;
+
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = nomeArquivo;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
 /* ---------- Detalhe do serviço (abre ao clicar no card) ---------- */
@@ -853,6 +1017,9 @@ function limparFormulario() {
   document.getElementById("fObs").value = "";
   document.getElementById("partsRows").innerHTML = "";
   novaLinhaPeca();
+  // só faz sentido oferecer "repetir último" quando há um serviço anterior
+  // pra copiar, cadastrando um novo (não ao editar um já existente)
+  document.getElementById("repeatLastBtn").style.display = servicos.length ? "block" : "none";
 }
 
 function abrirNovoServico() {
@@ -860,11 +1027,34 @@ function abrirNovoServico() {
   abrirModal();
 }
 
+// Pré-preenche o formulário com os dados do último serviço cadastrado do
+// veículo atual (nome, preço, peças, observações) — data e km ficam em
+// branco de propósito, já que são a parte que sempre muda. Também ajuda os
+// lembretes de manutenção a funcionar melhor: nomes repetidos com o texto
+// idêntico são o que a heurística usa pra agrupar o histórico.
+function repetirUltimoServico() {
+  const ultimo = servicos[0];
+  if (!ultimo) return;
+
+  document.getElementById("fServico").value = ultimo.servico_realizado;
+  document.getElementById("fPreco").value = ultimo.preco ?? "";
+  document.getElementById("fObs").value = ultimo.observacoes || "";
+  document.getElementById("partsRows").innerHTML = "";
+  const pecas = ultimo.pecas_trocadas || [];
+  if (pecas.length) {
+    pecas.forEach((p) => novaLinhaPeca(p.nome_peca, p.preco));
+  } else {
+    novaLinhaPeca();
+  }
+  toast("Preenchido com o último serviço — ajuste data, km e valores.");
+}
+
 function abrirEdicao(servicoId) {
   const s = servicos.find((x) => x.id === servicoId);
   if (!s) return;
   editingServicoId = servicoId;
   document.getElementById("modalTitle").textContent = "Editar serviço";
+  document.getElementById("repeatLastBtn").style.display = "none";
   preencherSelectVeiculos();
   document.getElementById("fVeiculo").value = s.veiculo_id;
   document.getElementById("fData").value = s.data || "";
@@ -893,6 +1083,23 @@ async function salvarServico() {
   if (!servicoRealizado) {
     toast("Preencha o nome do serviço realizado.", "error");
     return;
+  }
+
+  // Validação de km decrescente: só temos os serviços já carregados do
+  // veículo selecionado na aba atual (`servicos`), então essa checagem só
+  // roda quando o formulário está no mesmo veículo da aba — evita comparar
+  // com dados que não estão em memória.
+  if (km !== null && veiculoId === currentVeiculoId) {
+    const maiorKmHistorico = servicos
+      .filter((s) => s.id !== editingServicoId && s.km)
+      .reduce((max, s) => Math.max(max, s.km), 0);
+    if (maiorKmHistorico > 0 && km < maiorKmHistorico) {
+      const seguir = await confirmDialog(
+        `Esse km (${fmtKm(km)}) é menor que o maior km já registrado nesse veículo (${fmtKm(maiorKmHistorico)}). Confere?`,
+        { title: "Km parece incorreto", okText: "Salvar assim mesmo" }
+      );
+      if (!seguir) return;
+    }
   }
 
   const pecas = Array.from(document.querySelectorAll("#partsRows .part-row"))
@@ -972,15 +1179,23 @@ document.getElementById("modalOverlay").onclick = (e) => {
 document.getElementById("addPartBtn").onclick = () => novaLinhaPeca();
 document.getElementById("saveBtn").onclick = salvarServico;
 document.getElementById("searchInput").oninput = renderList;
+document.getElementById("repeatLastBtn").onclick = repetirUltimoServico;
 
-document.getElementById("closeKmModal").onclick = fecharKmModal;
-document.getElementById("kmModalOverlay").onclick = (e) => {
-  if (e.target.id === "kmModalOverlay") fecharKmModal();
-};
-document.getElementById("saveKmBtn").onclick = salvarKmAtual;
-document.getElementById("fKmAtual").addEventListener("keydown", (e) => {
-  if (e.key === "Enter") salvarKmAtual();
+document.getElementById("exportBtn").onclick = exportarCsv;
+
+document.querySelectorAll(".filter-chip").forEach((btn) => {
+  btn.onclick = () => {
+    filtroPeriodo = btn.dataset.periodo;
+    document.querySelectorAll(".filter-chip").forEach((b) => b.classList.toggle("active", b === btn));
+    renderList();
+  };
 });
+
+document.getElementById("closeVehicleModal").onclick = fecharVeiculoModal;
+document.getElementById("vehicleModalOverlay").onclick = (e) => {
+  if (e.target.id === "vehicleModalOverlay") fecharVeiculoModal();
+};
+document.getElementById("saveVehicleBtn").onclick = salvarVeiculo;
 
 document.getElementById("confirmCancelBtn").onclick = () => closeConfirmDialog(false);
 document.getElementById("confirmOkBtn").onclick = () => closeConfirmDialog(true);
