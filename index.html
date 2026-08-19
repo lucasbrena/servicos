@@ -30,6 +30,8 @@
     --warn-soft: #fef3e2;
     --danger: #dc2626;
     --danger-soft: #fdeaea;
+    --ok: #16a34a;
+    --ok-soft: #e7f7ee;
     /* cores por tipo de veículo — trocadas em --accent/--accent-soft via JS
        quando o usuário troca de aba, pra dar identidade visual a cada um */
     --accent-carro: #2f6fed;
@@ -51,6 +53,8 @@
       --warn-soft: #3a2c12;
       --danger: #f36868;
       --danger-soft: #3a1c1c;
+      --ok: #4ade80;
+      --ok-soft: #123522;
       --accent-carro: #5b8dff;
       --accent-carro-soft: #1c2740;
       --accent-moto: #ff9d52;
@@ -116,7 +120,7 @@
     border-radius: 12px; font-size: 12.5px; font-weight: 600; line-height: 1.4;
   }
   .lembrete-icon { font-size: 15px; }
-  .lembrete-ok { background: var(--accent-soft); color: var(--accent); }
+  .lembrete-ok { background: var(--ok-soft); color: var(--ok); }
   .lembrete-warn { background: var(--warn-soft); color: var(--warn); }
   .lembrete-danger { background: var(--danger-soft); color: var(--danger); }
 
@@ -158,7 +162,6 @@
   .card-price { font-size: 14px; font-weight: 700; color: var(--accent); white-space: nowrap; }
   .card-obs { margin-top: 6px; font-size: 12px; color: var(--muted); font-style: italic; }
   .card-parts { margin-top: 8px; font-size: 12px; color: var(--muted); background: #f7f8fa; border-radius: 8px; padding: 6px 8px; }
-  .card-actions { display: flex; gap: 6px; margin-top: 10px; }
   .btn-mini { font-size: 11.5px; font-weight: 600; padding: 5px 10px; border-radius: 7px; border: 1px solid var(--border); background: var(--card); color: var(--text); cursor: pointer; }
   .btn-mini.danger { color: var(--danger); border-color: #f3c9c9; }
   @media (prefers-color-scheme: dark) { .btn-mini.danger { border-color: #5a2626; } }
@@ -656,20 +659,91 @@ function closeConfirmDialog(result) {
   }
 }
 
-/* ---------- Lembretes de próxima manutenção ----------
-   Heurística: agrupa os serviços do veículo atual por palavra-chave em
-   comum no nome — não exige o texto idêntico, senão "Troca de óleo" e
-   "Troca de óleo e filtro" cairiam em grupos diferentes. Ignora palavras
-   muito genéricas (conectivos e o verbo "troca/trocar", que aparece em
-   quase todo serviço e juntaria coisas sem relação). Pra cada grupo com
-   2+ ocorrências com km preenchido, calcula o intervalo médio de km entre
+/* ---------- Alerta de troca de óleo (regra fixa, não estimativa) ----------
+   Diferente do lembrete genérico abaixo (que projeta a partir da média do
+   seu próprio histórico), esse usa um intervalo fixo típico de fabricante:
+   carro a cada 10.000 km ou 1 ano; moto a cada 1.500 km ou 6 meses — vale o
+   que vencer primeiro. Olha a troca de óleo mais recente (qualquer serviço
+   com "óleo" no nome) e compara com o km/data atuais. Se não houver
+   nenhuma troca de óleo registrada ainda, não há base pra alertar nada —
+   o card some nesse caso. */
+const REGRA_TROCA_OLEO = {
+  carro: { km: 10000, meses: 12 },
+  moto: { km: 1500, meses: 6 },
+};
+
+function mesesEntre(dataIso, hoje) {
+  const ini = new Date(dataIso + "T00:00:00");
+  let meses = (hoje.getFullYear() - ini.getFullYear()) * 12 + (hoje.getMonth() - ini.getMonth());
+  if (hoje.getDate() < ini.getDate()) meses -= 1;
+  return Math.max(meses, 0);
+}
+
+function getAlertaOleo() {
+  const v = veiculos.find((x) => x.id === currentVeiculoId);
+  if (!v) return null;
+  const regra = REGRA_TROCA_OLEO[v.tipo] || REGRA_TROCA_OLEO.carro;
+
+  const trocas = servicos
+    .filter((s) => normalizar(s.servico_realizado).includes("oleo") && (s.km || s.data))
+    .sort((a, b) => {
+      if (a.data && b.data) return a.data < b.data ? -1 : 1;
+      if (a.data && !b.data) return -1;
+      if (!a.data && b.data) return 1;
+      return (a.km || 0) - (b.km || 0);
+    });
+  const ultima = trocas[trocas.length - 1];
+  if (!ultima) return null;
+
+  const kmFaltam = v.km && ultima.km ? regra.km - (v.km - ultima.km) : null;
+  const mesesFaltam = ultima.data ? regra.meses - mesesEntre(ultima.data, new Date()) : null;
+  if (kmFaltam === null && mesesFaltam === null) return null;
+
+  const atrasado = (kmFaltam !== null && kmFaltam <= 0) || (mesesFaltam !== null && mesesFaltam <= 0);
+  const perto =
+    !atrasado &&
+    ((kmFaltam !== null && kmFaltam <= regra.km * 0.15) || (mesesFaltam !== null && mesesFaltam <= 1));
+
+  return { regra, kmFaltam, mesesFaltam, atrasado, perto };
+}
+
+function renderAlertaOleo(info) {
+  const cls = info.atrasado ? "lembrete-danger" : info.perto ? "lembrete-warn" : "lembrete-ok";
+  let texto;
+  if (info.atrasado) {
+    const motivos = [];
+    if (info.kmFaltam !== null && info.kmFaltam <= 0) motivos.push(`${fmtKm(Math.abs(info.kmFaltam))} além do limite de km`);
+    if (info.mesesFaltam !== null && info.mesesFaltam <= 0) {
+      const m = Math.abs(info.mesesFaltam);
+      motivos.push(`${m} ${m === 1 ? "mês" : "meses"} além do prazo`);
+    }
+    texto = `Troca de óleo atrasada — ${motivos.join(" e ")}.`;
+  } else {
+    const partes = [];
+    if (info.kmFaltam !== null) partes.push(fmtKm(info.kmFaltam));
+    if (info.mesesFaltam !== null) {
+      const m = info.mesesFaltam;
+      partes.push(`${m} ${m === 1 ? "mês" : "meses"}`);
+    }
+    texto = `Próxima troca de óleo em até ${partes.join(" ou ")} (o que vencer primeiro).`;
+  }
+  return `<div class="lembrete-item ${cls}"><span class="lembrete-icon">🛢️</span><span>${texto}</span></div>`;
+}
+
+/* ---------- Lembretes genéricos de manutenção ----------
+   Pra qualquer OUTRO serviço que se repete no histórico (não óleo, que já
+   tem o alerta de regra fixa acima): agrupa por palavra-chave em comum no
+   nome — não exige o texto idêntico, senão "Troca de pastilha" e "Pastilha
+   de freio dianteira" cairiam em grupos diferentes. Ignora palavras muito
+   genéricas (conectivos e o verbo "troca/trocar", que aparece em quase
+   todo serviço e juntaria coisas sem relação). Pra cada grupo com 2+
+   ocorrências com km preenchido, calcula o intervalo médio de km entre
    elas e projeta quando a próxima deve acontecer a partir do km atual do
    veículo. Cadastrar os serviços recorrentes com nomes parecidos (o botão
-   "repetir último serviço" ajuda nisso) deixa a previsão mais confiável.
-   Mostra só os 2 lembretes mais urgentes pra não poluir a tela. */
+   "repetir último serviço" ajuda nisso) deixa a previsão mais confiável. */
 const PALAVRAS_GENERICAS = new Set([
   "de", "da", "do", "das", "dos", "e", "o", "a", "os", "as", "em", "no", "na",
-  "pra", "para", "com", "um", "uma", "troca", "trocar", "troquei",
+  "pra", "para", "com", "um", "uma", "troca", "trocar", "troquei", "oleo",
 ]);
 
 function palavrasChave(nome) {
@@ -682,6 +756,7 @@ function agruparServicosRecorrentes() {
   const grupos = []; // [{ palavras: Set, itens: [...] }]
   servicos.forEach((s) => {
     if (!s.km || !s.servico_realizado) return;
+    if (normalizar(s.servico_realizado).includes("oleo")) return; // já coberto pelo alerta de óleo
     const palavras = new Set(palavrasChave(s.servico_realizado));
     if (!palavras.size) return; // nome só com palavras genéricas — não dá pra agrupar com segurança
 
@@ -696,7 +771,7 @@ function agruparServicosRecorrentes() {
   return grupos;
 }
 
-function getLembretes() {
+function getLembretesGenericos() {
   const v = veiculos.find((x) => x.id === currentVeiculoId);
   if (!v || !v.km) return [];
 
@@ -715,37 +790,43 @@ function getLembretes() {
     const ultima = ordenado[ordenado.length - 1];
     const previsto = ultima.km + media;
     const faltam = previsto - v.km;
-    // usa o nome do registro mais recente do grupo como rótulo do lembrete
     lembretes.push({ nome: ultima.servico_realizado, previsto: Math.round(previsto), faltam: Math.round(faltam) });
   });
 
   lembretes.sort((a, b) => a.faltam - b.faltam);
-  return lembretes.slice(0, 2);
+  return lembretes;
 }
 
+function renderLembreteGenerico(info) {
+  const atrasado = info.faltam <= 0;
+  const perto = info.faltam > 0 && info.faltam <= 500;
+  const cls = atrasado ? "lembrete-danger" : perto ? "lembrete-warn" : "lembrete-ok";
+  const texto = atrasado
+    ? `${escapeHtml(info.nome)}: provavelmente atrasado em ${fmtKm(Math.abs(info.faltam))}`
+    : `${escapeHtml(info.nome)}: previsto para ~${fmtKm(info.previsto)} (faltam ${fmtKm(info.faltam)})`;
+  return `<div class="lembrete-item ${cls}"><span class="lembrete-icon">🔧</span><span>${texto}</span></div>`;
+}
+
+// Junta o alerta de óleo (regra fixa) com até 1 lembrete genérico mais
+// urgente, pra não poluir a tela com muitos cards.
 function renderLembrete() {
   const el = document.getElementById("lembreteWrap");
-  const lembretes = getLembretes();
+  const cards = [];
 
-  if (!lembretes.length) {
+  const alertaOleo = getAlertaOleo();
+  if (alertaOleo) cards.push(renderAlertaOleo(alertaOleo));
+
+  const genericos = getLembretesGenericos().slice(0, 2 - cards.length);
+  genericos.forEach((info) => cards.push(renderLembreteGenerico(info)));
+
+  if (!cards.length) {
     el.style.display = "none";
     el.innerHTML = "";
     return;
   }
 
   el.style.display = "flex";
-  el.innerHTML = lembretes
-    .map((info) => {
-      const atrasado = info.faltam <= 0;
-      const perto = info.faltam > 0 && info.faltam <= 500;
-      const cls = atrasado ? "lembrete-danger" : perto ? "lembrete-warn" : "lembrete-ok";
-      const icone = normalizar(info.nome).includes("oleo") ? "🛢️" : "🔧";
-      const texto = atrasado
-        ? `${escapeHtml(info.nome)}: provavelmente atrasado em ${fmtKm(Math.abs(info.faltam))}`
-        : `${escapeHtml(info.nome)}: previsto para ~${fmtKm(info.previsto)} (faltam ${fmtKm(info.faltam)})`;
-      return `<div class="lembrete-item ${cls}"><span class="lembrete-icon">${icone}</span><span>${texto}</span></div>`;
-    })
-    .join("");
+  el.innerHTML = cards.join("");
 }
 
 /* ---------- Gráfico de gasto por mês (sem lib, barras em CSS) ---------- */
@@ -877,10 +958,6 @@ function renderList() {
           </div>
           ${pecas ? `<div class="card-parts">🔧 ${escapeHtml(pecas)}</div>` : ""}
           ${s.observacoes ? `<div class="card-obs">${escapeHtml(s.observacoes)}</div>` : ""}
-          <div class="card-actions">
-            <button class="btn-mini" onclick="event.stopPropagation(); abrirEdicao(${s.id})">Editar</button>
-            <button class="btn-mini danger" onclick="event.stopPropagation(); apagarServico(${s.id})">Apagar</button>
-          </div>
         </div>
       `;
     })
